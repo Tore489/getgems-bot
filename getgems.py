@@ -18,8 +18,8 @@ PUBLIC_URL = (os.getenv("PUBLIC_URL") or "").strip()
 # Render сам даёт PORT
 PORT = int(os.getenv("PORT", "10000"))
 
-if not TG_TOKEN or not GETGEMS_API_KEY or not PUBLIC_URL:
-    raise RuntimeError("Set TG_TOKEN, GETGEMS_API_KEY, PUBLIC_URL (env or .env)")
+if not TG_TOKEN or not GETGEMS_API_KEY:
+    raise RuntimeError("Set TG_TOKEN, GETGEMS_API_KEY")
 
 BASE = "https://api.getgems.io/public-api"
 CHECK_INTERVAL = 2  # ⚡ 2 секунды
