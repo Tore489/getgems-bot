@@ -14,8 +14,14 @@ load_dotenv()
 TG_TOKEN = (os.getenv("TG_TOKEN") or "").strip()
 GETGEMS_API_KEY = (os.getenv("GETGEMS_API_KEY") or "").strip()
 
-if not TG_TOKEN or not GETGEMS_API_KEY:
-    raise RuntimeError("Set TG_TOKEN and GETGEMS_API_KEY in .env")
+# ТВОЙ Render URL, например: https://getgems-bot.onrender.com
+PUBLIC_URL = (os.getenv("PUBLIC_URL") or "").strip()
+
+# Render сам даёт PORT
+PORT = int(os.getenv("PORT", "10000"))
+
+if not TG_TOKEN or not GETGEMS_API_KEY or not PUBLIC_URL:
+    raise RuntimeError("Set TG_TOKEN, GETGEMS_API_KEY, PUBLIC_URL (env or .env)")
 
 BASE = "https://api.getgems.io/public-api"
 CHECK_INTERVAL = 2  # ⚡ 2 секунды
@@ -84,6 +90,7 @@ def build_market_avg(items: List[dict]) -> Dict[str, float]:
             continue
         market[extract_model(name)].append(price)
 
+    # средняя по модели: даже если 1 item, тоже считаем
     return {m: sum(p) / len(p) for m, p in market.items()}
 
 
@@ -94,6 +101,7 @@ def format_listing(it: dict, avg_map: Dict[str, float]) -> Optional[str]:
 
     raw = sale.get("fixPrice") or sale.get("price") or sale.get("fullPrice")
     price = ton_from_any(raw)
+
     if not addr:
         return None
 
@@ -104,7 +112,7 @@ def format_listing(it: dict, avg_map: Dict[str, float]) -> Optional[str]:
     avg_str = f"{avg:.2f} TON" if avg is not None else "—"
 
     diff = ""
-    if price is not None and avg is not None:
+    if price is not None and avg is not None and avg != 0:
         pct = (price / avg - 1) * 100
         if pct < 0:
             diff = f"\n🔥 Дешевле рынка на {abs(pct):.1f}%"
@@ -123,12 +131,17 @@ def format_listing(it: dict, avg_map: Dict[str, float]) -> Optional[str]:
 
 # ========= TELEGRAM =========
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /start:
+    - запоминаем chat_id (куда слать)
+    - ставим baseline (чтобы не спамить старым)
+    """
     global previous_addresses
 
     chat_id = update.effective_chat.id
     context.application.bot_data["chat_id"] = chat_id
 
-    await update.message.reply_text("🚀 Ускоренный монитор включён")
+    await update.message.reply_text("🚀 Монитор включён. Буду присылать только НОВОЕ.")
 
     items = await fetch_gifts()
     previous_addresses = {
@@ -146,7 +159,7 @@ async def monitor(context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = context.application.bot_data.get("chat_id")
     if not chat_id:
-        return
+        return  # пока не написали /start — некуда слать
 
     try:
         items = await fetch_gifts()
@@ -163,7 +176,6 @@ async def monitor(context: ContextTypes.DEFAULT_TYPE):
     }
 
     new_addresses = current_addresses - previous_addresses
-
     log.info("items=%d new=%d", len(items), len(new_addresses))
 
     if not new_addresses:
@@ -178,22 +190,34 @@ async def monitor(context: ContextTypes.DEFAULT_TYPE):
             continue
 
         msg = format_listing(it, avg_map)
-        if not msg:
-            continue
-
-        await context.application.bot.send_message(chat_id, msg)
+        if msg:
+            await context.application.bot.send_message(chat_id, msg)
 
     previous_addresses = current_addresses
 
 
-# ========= MAIN =========
+# ========= MAIN (WEBHOOK) =========
 def main():
     app = Application.builder().token(TG_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
+
+    # Монитор каждые 2 секунды
     app.job_queue.run_repeating(monitor, interval=CHECK_INTERVAL, first=3)
 
-    log.info("Fast bot started")
-    app.run_polling()
+    # Webhook endpoint
+    webhook_path = "/webhook"
+    webhook_url = PUBLIC_URL.rstrip("/") + webhook_path
+
+    log.info("Webhook starting on port=%s url=%s", PORT, webhook_url)
+
+    # Важно: это открывает порт => Render НЕ будет таймаутить
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=webhook_path.lstrip("/"),
+        webhook_url=webhook_url,
+        drop_pending_updates=True,
+    )
 
 
 if __name__ == "__main__":

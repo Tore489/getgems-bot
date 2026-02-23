@@ -1,4 +1,4 @@
-python-telegram-bot[job-queue]
+python-telegram-bot[job-queue,wbhooks]==22.6
 httpx
 apscheduler
 python-dotenv
