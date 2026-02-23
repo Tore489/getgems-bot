@@ -1,7 +1,6 @@
 import os
 import logging
 import aiohttp
-from dotenv import load_dotenv
 from collections import defaultdict
 from typing import Any, Optional, Dict, List
 
@@ -9,7 +8,6 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ========= LOAD ENV =========
-load_dotenv()
 
 TG_TOKEN = (os.getenv("TG_TOKEN") or "").strip()
 GETGEMS_API_KEY = (os.getenv("GETGEMS_API_KEY") or "").strip()
